@@ -1,4 +1,4 @@
-FROM localhost/mach-base:1.0
+FROM machregistrydk.azurecr.io/dhavalkpatelmach:1
 MAINTAINER Dhaval Patel <dhaval.p@valtech.com>
 
 RUN mkdir -p /rnr
