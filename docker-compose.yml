@@ -1,0 +1,73 @@
+version: '3.7'
+
+
+# Define services
+services:
+  # RNRADMIN
+  rnradmin:
+    # Configuration for building the docker image for the backend service
+    image: localhost/mach-rnradmin:1.0 # Use an image built from the specified dockerfile
+    container_name: rnradmin
+    ports:
+      - "8083:8083" # Forward the exposed port 8083 on the container to port 8083 on the host machine
+    restart: always
+    depends_on:
+      - rnrauth
+    networks: # Networks to join (Services on the same network can communicate with each other using their name)
+      - backend
+
+  # RNRAPP
+  rnrapp:
+    # Configuration for building the docker image for the backend service
+    image: localhost/mach-rnrapp:1.0 # Use an image built from the specified dockerfile
+    container_name: rnrapp
+    ports:
+      - "8087:8087" # Forward the exposed port 8087 on the container to port 8087 on the host machine
+    restart: always
+    depends_on:
+      - rnrauth
+    networks: # Networks to join (Services on the same network can communicate with each other using their name)
+      - backend
+
+
+  # RNRAUTH
+  rnrauth:
+    # Configuration for building the docker image for the backend service
+    image: localhost/mach-rnrauth:1.0 # Use an image built from the specified dockerfile
+    container_name: rnrauth
+    ports:
+      - "8085:8085" # Forward the exposed port 8085 on the container to port 8085 on the host machine
+    restart: always
+    depends_on:
+      - db # This service depends on mysql. Start that first.
+    environment: # Pass environment variables to the service
+      SPRING_DATASOURCE_URL: jdbc:mysql://db/review_rating_app
+      SPRING_DATASOURCE_USERNAME: mach
+      SPRING_DATASOURCE_PASSWORD: mach@123
+    networks: # Networks to join (Services on the same network can communicate with each other using their name)
+      - backend
+
+
+  # Database Service (Mysql)
+  db:
+    image: localhost/mach-mysql:8.0
+    container_name: db
+    restart: always
+    environment:
+      MYSQL_DATABASE: review_rating_app
+      MYSQL_USER: mach
+      MYSQL_PASSWORD: mach@123
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - db-data:/var/lib/mysql
+    networks:
+      - backend
+
+# Volumes
+volumes:
+  db-data:
+
+
+# Networks to be created to facilitate communication between containers
+networks:
+  backend:
