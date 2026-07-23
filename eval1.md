@@ -80,92 +80,132 @@ The selected approach should:
 
 ---
 
-# Workload Segmentation
+## Workload Segmentation
 
-Rather than selecting one tool for all scenarios, workloads should be evaluated independently.
+The organization supports a heterogeneous application estate. Rather than adopting a single execution abstraction for all workloads, the execution engine should be selected based on workload characteristics and operational requirements.
 
-## Workload Categories
-
-### 1. Traditional Enterprise Applications
-
-Examples:
-
-* ASP.NET
-* .NET Framework
-* Windows Services
-* IIS
-* Azure App Service
-* Azure Functions
-
-Characteristics:
-
-* Windows-heavy
-* Existing PowerShell automation
-* Bicep deployments
-* Azure DevOps agents
-* Limited container usage
-
-**Primary Recommendation:** Taskfile
+| Workload Category                   | Typical Technologies                                     | Typical Characteristics                                                        | Preferred Execution Engine    | Rationale                                                                                                                                            |
+| ----------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Traditional Enterprise Applications | .NET Framework, ASP.NET, IIS, Windows Services           | Windows-based, PowerShell automation, Azure App Service deployments, Bicep IaC | **Taskfile**                  | Maximizes reuse of existing automation with minimal migration effort and excellent Windows support.                                                  |
+| Azure PaaS Applications             | Azure App Service, Azure Functions, Logic Apps           | Azure-native deployments, Bicep, PowerShell, minimal container usage           | **Taskfile**                  | Thin orchestration with reusable deployment tasks aligns well with existing Azure delivery patterns.                                                 |
+| Linux-based Applications            | Python, Java, Node.js                                    | Linux runners, Bash scripts, VM or PaaS deployments                            | **Taskfile (default)**        | Suitable where applications are not container-centric and existing scripting can be reused. Dagger may be evaluated if container adoption increases. |
+| Containerized Applications          | Docker-based applications                                | OCI image builds, container registries, Linux runners                          | **Dagger**                    | Provides container-native execution, BuildKit integration, reproducible builds, and efficient caching.                                               |
+| Kubernetes Workloads                | AKS, Kubernetes, Helm                                    | Container-first deployments, multi-stage pipelines, GitOps integration         | **Dagger**                    | Better suited for Kubernetes-centric delivery and container lifecycle management.                                                                    |
+| Cloud-native Microservices          | Polyglot services, APIs, event-driven workloads          | Independent services, Docker, Kubernetes, ephemeral runners                    | **Dagger**                    | Designed for container-native workflows with strong portability and execution consistency.                                                           |
+| Hybrid Applications                 | Windows build + Docker packaging + Kubernetes deployment | Mixed technology stack requiring both traditional and cloud-native delivery    | **Pilot Validation Required** | Evaluate whether Taskfile orchestrates Dagger or Dagger becomes the primary execution engine based on complexity and operational needs.              |
 
 ---
 
-### 2. Linux-based Applications
+## Example – Taskfile Execution Model
 
-Examples:
+Azure DevOps or GitHub Actions acts as the orchestration layer, while Taskfile encapsulates the implementation logic.
 
-* Python
-* Java
-* Node.js
-* Linux-hosted services
+**Azure DevOps Pipeline**
 
-Characteristics:
+```yaml
+steps:
+- checkout: self
 
-* Bash automation
-* Linux runners
-* Mixed deployment models
+- script: task ci
+  displayName: Run CI
 
-**Recommendation:** Evaluate both Taskfile and Dagger based on deployment model.
+- script: task cd
+  displayName: Deploy
+```
+
+**Application Taskfile**
+
+```yaml
+version: '3'
+
+includes:
+  build:
+    taskfile: ./taskfile-library/build/dotnet.yml
+
+  deploy:
+    taskfile: ./taskfile-library/deploy/azure-appservice.yml
+
+tasks:
+  ci:
+    deps:
+      - build:restore
+      - build:compile
+      - build:test
+
+  cd:
+    deps:
+      - deploy:appservice
+```
+
+**Execution Flow**
+
+```
+Azure DevOps / GitHub
+        │
+    task ci
+        │
+Application Taskfile
+        │
+Shared Taskfile Library
+        │
+PowerShell / Bicep / CLI
+```
 
 ---
 
-### 3. Container-native Workloads
+## Example – Dagger Execution Model
 
-Examples:
+Azure DevOps or GitHub Actions invokes a Dagger pipeline, with the implementation defined in code and executed inside containers.
 
-* Kubernetes
-* AKS
-* Docker
-* Microservices
+**Azure DevOps Pipeline**
 
-Characteristics:
+```yaml
+steps:
+- checkout: self
 
-* OCI images
-* BuildKit
-* Multi-stage builds
-* Containerized testing
-* Ephemeral runners
+- script: dagger call ci
+  displayName: Run CI
 
-**Primary Recommendation:** Dagger
+- script: dagger call deploy
+  displayName: Deploy
+```
 
----
+**Example Dagger Module (Conceptual)**
 
-### 4. Hybrid Applications
+```go
+func (m *Pipeline) CI(ctx context.Context) error {
+    return dag.Container().
+        From("mcr.microsoft.com/dotnet/sdk:8.0").
+        WithExec([]string{"dotnet", "restore"}).
+        WithExec([]string{"dotnet", "build"}).
+        WithExec([]string{"dotnet", "test"}).
+        Sync(ctx)
+}
+```
 
-Applications combining:
+**Execution Flow**
 
-* Windows builds
-* Container packaging
-* Kubernetes deployment
+```
+Azure DevOps / GitHub
+        │
+ dagger call ci
+        │
+ Dagger Engine
+        │
+ OCI Containers
+        │
+ BuildKit / Docker
+```
 
-Recommendation:
+### Key Difference
 
-Evaluate whether:
-
-* Taskfile orchestrates Dagger
-* Dagger becomes the primary execution engine
-
-Pilot validation required.
-
+| Aspect                    | Taskfile                         | Dagger                              |
+| ------------------------- | -------------------------------- | ----------------------------------- |
+| Primary abstraction       | Task orchestration               | Containerized execution             |
+| Implementation            | Shell, PowerShell, CLI tasks     | Code executed in OCI containers     |
+| Best suited for           | Traditional enterprise workloads | Container-native workloads          |
+| Infrastructure dependency | Existing agents                  | Container runtime (Docker/BuildKit) |
+| Migration effort          | Low                              | Medium–High                         |
 ---
 
 # Architectural Positioning
